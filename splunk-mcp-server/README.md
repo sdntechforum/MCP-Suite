@@ -49,6 +49,13 @@ MCP_HOST=0.0.0.0                     # Listen on all interfaces
 MCP_PORT=8006                        # Proxy server port
 ```
 
+### What token to use (SPLUNK_API_KEY)
+
+The server sends **`Authorization: Bearer <SPLUNK_API_KEY>`** to Splunk’s MCP endpoint. The **Splunk MCP app** requires an **encrypted token**, not the short token ID.
+
+- If you see **"encrypted token required"**: the MCP app expects the **full encrypted token** (the long secret shown when the token was created), not the short token ID from the token list. When you create a token in the MCP app, copy the **entire token value** it displays once (often a long base64-style string) and set that as `SPLUNK_API_KEY`.
+- **Where to get it:** In the Splunk MCP app, create a new token and copy the **full token secret** from the creation screen (not the short ID from the token list). Put it in `.env` as `SPLUNK_API_KEY=<paste_here>` (no quotes).
+
 ### Setup
 
 1. Copy `.env.example` to `.env`:
@@ -59,7 +66,7 @@ MCP_PORT=8006                        # Proxy server port
 2. Update `.env` with your Splunk credentials:
    ```bash
    SPLUNK_HOST=your-splunk-host
-   SPLUNK_API_KEY=your_actual_bearer_token
+   SPLUNK_API_KEY=your_actual_bearer_token   # From Settings → Tokens in Splunk Web
    ```
 
 3. Build and run:
@@ -142,11 +149,17 @@ curl -k https://splunk.company.com:8089/services/mcp \
   -H "Authorization: Bearer YOUR_TOKEN"
 ```
 
+### Troubleshooting and full write-up
+
+For a **thorough account** of the issues we hit (wrong URL/port, token type, tool name mismatch) and how we solved them, including “aha” moments and a quick reference, see:
+
+**[SPLUNK_MCP_TROUBLESHOOTING.md](SPLUNK_MCP_TROUBLESHOOTING.md)**
+
 ### Common Issues
 
-1. **Connection refused**: Check SPLUNK_HOST and SPLUNK_PORT
-2. **401 Unauthorized**: Verify SPLUNK_API_KEY is correct
-3. **SSL errors**: Ensure SPLUNK_VERIFY_SSL=false for self-signed certs
+1. **Connection refused**: Check SPLUNK_HOST and SPLUNK_PORT (use **8089** for MCP, not 443).
+2. **401 / "encrypted token required"**: Use the **full encrypted token** from the MCP app’s token-creation screen, not the short token ID from the list. See [SPLUNK_MCP_TROUBLESHOOTING.md](SPLUNK_MCP_TROUBLESHOOTING.md).
+3. **SSL errors**: Ensure SPLUNK_VERIFY_SSL=false for self-signed certs.
 
 ## License
 

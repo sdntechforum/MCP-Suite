@@ -34,6 +34,7 @@ import urllib3
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 from fastmcp import FastMCP
+from starlette.responses import JSONResponse
 
 # Disable SSL warnings if verify is False
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -107,12 +108,12 @@ class CiscoISEAPI:
         })
         self.session.verify = verify_ssl
     
-    def get(self, endpoint: str, params: Optional[Dict] = None) -> Dict[str, Any]:
+    def get(self, endpoint: str, params: Optional[Dict] = None, timeout: Optional[int] = 30) -> Dict[str, Any]:
         """Make GET request to ISE ERS API"""
         url = f"{self.base_url}/{endpoint.lstrip('/')}"
         
         try:
-            response = self.session.get(url, params=params)
+            response = self.session.get(url, params=params, timeout=timeout)
             response.raise_for_status()
             return response.json()
         except Exception as e:
@@ -124,6 +125,13 @@ ise_api = CiscoISEAPI(ISE_HOST, ISE_USERNAME, ISE_PASSWORD, ISE_VERSION, ISE_VER
 
 # Initialize FastMCP
 mcp = FastMCP("Cisco ISE MCP Server")
+
+
+@mcp.custom_route("/health", methods=["GET"])
+async def health_check(request: Any) -> JSONResponse:
+    """Health check for load balancers and debugging."""
+    return JSONResponse({"status": "ok", "service": "ise-mcp-server"})
+
 
 # ISE API Endpoints Configuration
 ISE_ENDPOINTS = {
@@ -599,17 +607,29 @@ def ise_get_tacacs_profiles(
     return ise_api.get("tacacsprofile", params=params)
 
 if __name__ == "__main__":
-    print("🚀 Starting Cisco ISE MCP Server...")
+    print("🚀 Starting Cisco ISE MCP Server...", flush=True)
     
-    # Test ISE API connectivity
+    # Test ISE API connectivity (short timeout; do not block server startup)
     try:
-        network_devices = ise_api.get("networkdevice", params={"size": 1})
-        print("✅ Successfully connected to ISE ERS API")
-        print(f"📊 ISE Server Version: {ISE_VERSION}")
+        network_devices = ise_api.get("networkdevice", params={"size": 1}, timeout=5)
+        print("✅ Successfully connected to ISE ERS API", flush=True)
+        print(f"📊 ISE Server Version: {ISE_VERSION}", flush=True)
     except Exception as e:
-        print(f"❌ Failed to connect to ISE API: {e}")
-        print("💡 Please check your ISE credentials, host connectivity, and ERS API status")
-        exit(1)
+        print(f"⚠️  Could not reach ISE API at startup: {e}", flush=True)
+        print("   Server will start anyway; tools will use ISE when called.", flush=True)
     
-    # Start the MCP server
-    mcp.run(transport="http", host=mcp_host, port=mcp_port)
+    # Run via ASGI app + uvicorn for request logging and health route
+    app = mcp.http_app()
+    import uvicorn
+    try:
+        uvicorn.run(
+            app,
+            host=mcp_host,
+            port=mcp_port,
+            log_level="info",
+        )
+    except Exception as e:
+        print(f"Fatal error: {e}", flush=True)
+        import traceback
+        traceback.print_exc()
+        raise

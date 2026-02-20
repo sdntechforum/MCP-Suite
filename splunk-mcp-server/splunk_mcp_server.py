@@ -87,8 +87,14 @@ if not splunk_api_key or splunk_api_key.startswith('your_actual_'):
     logger.error("📋 Please set your Splunk API key in .env file")
     exit(1)
 
-# Build Splunk backend URL
-splunk_backend_url = f"https://{splunk_host}:{splunk_port}/services/mcp"
+# Build Splunk backend URL (host must be hostname/IP only - no path or trailing slash)
+# SPLUNK_MCP_PATH: path to the MCP endpoint on Splunk (default /services/mcp).
+# If your Splunk MCP app uses a different path (e.g. /en-US/services/mcp or /servicesNS/nobody/your_app/services/mcp), set it here.
+splunk_host_clean = (splunk_host or "").rstrip("/").split("/")[0]
+splunk_mcp_path = (os.getenv("SPLUNK_MCP_PATH") or "/services/mcp").strip().rstrip("/")
+if not splunk_mcp_path.startswith("/"):
+    splunk_mcp_path = "/" + splunk_mcp_path
+splunk_backend_url = f"https://{splunk_host_clean}:{splunk_port}{splunk_mcp_path}"
 
 logger.info(f"✅ Splunk backend: {splunk_backend_url}")
 logger.info(f"✅ API key loaded: {splunk_api_key[:8]}...{splunk_api_key[-4:]}")
@@ -105,14 +111,32 @@ http_client = httpx.AsyncClient(
 # Create FastMCP server
 mcp = FastMCP("Splunk MCP Server")
 
+# Map our tool names to Splunk MCP app tool names (Splunk uses splunk_* prefix)
+SPLUNK_TOOL_NAMES = {
+    "get_splunk_info": "splunk_get_info",
+    "get_indexes": "splunk_get_indexes",
+    "get_index_info": "splunk_get_index_info",
+    "get_user_list": "splunk_get_user_list",
+    "get_user_info": "splunk_get_user_info",
+    "run_splunk_query": "splunk_run_query",
+    "get_metadata": "splunk_get_metadata",
+    "get_kv_store_collections": "splunk_get_kv_store_collections",
+    "get_knowledge_objects": "splunk_get_knowledge_objects",
+}
+
 # Helper function to call Splunk backend
 async def call_splunk_mcp(method: str, params: dict = None):
     """Call Splunk MCP backend with JSON-RPC"""
+    params = params or {}
+    if method == "tools/call":
+        name = params.get("name")
+        if name in SPLUNK_TOOL_NAMES:
+            params = {**params, "name": SPLUNK_TOOL_NAMES[name]}
     payload = {
         "jsonrpc": "2.0",
         "id": 1,
         "method": method,
-        "params": params or {}
+        "params": params
     }
     
     try:
@@ -201,7 +225,7 @@ async def run_splunk_query(
             "query": query,
             "earliest_time": earliest_time,
             "latest_time": latest_time,
-            "max_results": max_results
+            "row_limit": max_results
         }
     })
 
@@ -220,14 +244,12 @@ async def get_metadata(
         earliest_time: Start time (default: -24h)
         latest_time: End time (default: now)
     """
+    args = {"type": metadata_type, "earliest_time": earliest_time, "latest_time": latest_time}
+    if index is not None:
+        args["index"] = index
     return await call_splunk_mcp("tools/call", {
         "name": "get_metadata",
-        "arguments": {
-            "metadata_type": metadata_type,
-            "index": index,
-            "earliest_time": earliest_time,
-            "latest_time": latest_time
-        }
+        "arguments": args
     })
 
 @mcp.tool()
@@ -245,9 +267,12 @@ async def get_knowledge_objects(object_type: str = None) -> dict:
     Args:
         object_type: Optional type filter (savedsearches, alerts, dashboards, etc.)
     """
+    args = {}
+    if object_type is not None:
+        args["type"] = object_type
     return await call_splunk_mcp("tools/call", {
         "name": "get_knowledge_objects",
-        "arguments": {"object_type": object_type} if object_type else {}
+        "arguments": args
     })
 
 if __name__ == "__main__":

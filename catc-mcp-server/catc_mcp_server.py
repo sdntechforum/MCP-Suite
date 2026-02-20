@@ -112,7 +112,9 @@ class CatalystCenterAPI:
         }
         
         try:
-            response = self.session.post(auth_url, headers=headers, verify=self.verify_ssl)
+            response = self.session.post(
+                auth_url, headers=headers, verify=self.verify_ssl, timeout=15
+            )
             if response.status_code == 200:
                 self.token = response.json().get("Token")
                 return True
@@ -247,6 +249,97 @@ def get_clients(limit: int = 100) -> Dict[str, Any]:
     """
     params = {"limit": limit}
     return catc_api.get("/client-health", params=params)
+
+@mcp.tool()
+def get_wired_wireless_clients(
+    include_client_list: bool = True,
+    client_list_limit: int = 500,
+) -> Dict[str, Any]:
+    """
+    Get wired and wireless client counts and optionally per-client lists from Catalyst Center.
+
+    Uses the client-health API for wired/wireless counts (always available). Optionally
+    fetches per-client details (MAC, IP, name) from the Data API when supported by your
+    Catalyst Center version (returns 404 on some versions).
+
+    Args:
+        include_client_list: If True (default), attempt to fetch per-client lists from
+            the Data API. Set False to only return counts from client-health.
+        client_list_limit: Max clients to return per type when fetching lists (default: 500).
+
+    Returns:
+        Dict with:
+          - summary: wired_count, wireless_count, total
+          - wired_clients: list of clients (if Data API available), each with macAddress, ipv4Address, name, etc.
+          - wireless_clients: list of clients (if Data API available)
+          - source: "client_health" for counts; "data_api" for lists when available
+    """
+    # 1) Client-health API – wired/wireless counts
+    health = catc_api.get("/client-health", params={"limit": 100})
+    wired_count = 0
+    wireless_count = 0
+    all_count = 0
+    for site in health.get("response") or []:
+        for detail in site.get("scoreDetail") or []:
+            cat = detail.get("scoreCategory") or {}
+            if cat.get("scoreCategory") != "CLIENT_TYPE":
+                continue
+            val = (cat.get("value") or "").upper()
+            cnt = detail.get("clientCount") or 0
+            if val == "WIRED":
+                wired_count += cnt
+            elif val == "WIRELESS":
+                wireless_count += cnt
+            elif val == "ALL":
+                all_count += cnt
+
+    result: Dict[str, Any] = {
+        "summary": {
+            "wired_count": wired_count,
+            "wireless_count": wireless_count,
+            "total": wired_count + wireless_count if (wired_count or wireless_count) else all_count,
+        },
+        "wired_clients": [],
+        "wireless_clients": [],
+        "source": "client_health",
+    }
+
+    if not include_client_list:
+        return result
+
+    # 2) Optional: Data API per-client list (may 404 on some Catalyst Center versions)
+    url_clients = f"{catc_api.base_url}/dna/data/api/v1/clients"
+    headers = catc_api._get_headers()
+    for client_type, key in [("Wired", "wired_clients"), ("Wireless", "wireless_clients")]:
+        try:
+            response = catc_api.session.get(
+                url_clients,
+                headers=headers,
+                params={"limit": client_list_limit, "type": client_type},
+                verify=catc_api.verify_ssl,
+                timeout=30,
+            )
+            if response.status_code == 401:
+                if catc_api.authenticate():
+                    headers = catc_api._get_headers()
+                    response = catc_api.session.get(
+                        url_clients,
+                        headers=headers,
+                        params={"limit": client_list_limit, "type": client_type},
+                        verify=catc_api.verify_ssl,
+                        timeout=30,
+                    )
+            response.raise_for_status()
+            data = response.json()
+            result[key] = data.get("response") or []
+            result["source"] = "data_api"
+        except requests.exceptions.HTTPError as e:
+            if e.response.status_code != 404:
+                result["_error"] = result.get("_error", "") + f" Data API ({client_type}): {e}. "
+        except Exception as e:
+            result["_error"] = result.get("_error", "") + f" Data API ({client_type}): {e}. "
+
+    return result
 
 @mcp.tool()
 def get_network_health() -> Dict[str, Any]:
@@ -473,12 +566,13 @@ def resolve_issues(issue_ids: List[str]) -> Dict[str, Any]:
 if __name__ == "__main__":
     print("🚀 Starting Catalyst Center MCP Server...")
     
-    # Test authentication
+    # Optional: test authentication at startup (do not exit on failure)
+    # Tool calls will attempt auth when needed; container must be able to reach CATC_URL for tools to work.
     if catc_api.authenticate():
         print("✅ Successfully authenticated with Catalyst Center")
     else:
-        print("❌ Failed to authenticate with Catalyst Center")
-        exit(1)
+        print("⚠️  Could not authenticate with Catalyst Center at startup (server will still start)")
+        print("   Tools will retry auth on first use. Ensure CATC_URL is reachable from this host.")
     
-    # Start the MCP server
+    # Start the MCP server so Cursor/clients can connect and discover tools
     mcp.run(transport="http", host=mcp_host, port=mcp_port)

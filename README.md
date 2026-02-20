@@ -133,6 +133,35 @@ The suite provides direct access to seven containerized MCP servers, perfect for
 
 ## 🚀 Quick Start
 
+### 🔄 Using with Cursor (Docker restarts)
+
+Cursor connects to MCP servers **only when it starts**. If you restart Docker (or start it after opening Cursor), the servers are running but Cursor won’t see them until you **reload the window**.
+
+**Easiest workflow:**
+
+1. **Start Docker first**, then open Cursor (or reload after starting Docker).
+2. Or run the helper script, then reload Cursor:
+   ```bash
+   ./start-for-cursor.sh
+   ```
+   Then: **Cmd+Shift+P** (Mac) or **Ctrl+Shift+P** (Win/Linux) → type **“Developer: Reload Window”** → Enter.
+
+After reload, Cursor reconnects to all MCP servers in `~/.cursor/mcp.json` and they appear in the list again.
+
+### 🔌 How to see which MCP servers are connected
+
+Cursor doesn’t show a single “connected vs not connected” list in the UI. You can tell which servers are actually connected in two ways:
+
+1. **From an error message**  
+   If you (or the AI) use a tool from a server that isn’t connected, Cursor returns an error like:  
+   `MCP server does not exist: … Available servers: cursor-ide-browser, user-ThousandEyes-MCP-Server, user-Catalyst-Center-MCP-Server, …`  
+   The **“Available servers”** list is the set of servers Cursor has **connected** and can call.
+
+2. **In Cursor**  
+   Check **Cursor Settings** (Cmd+, / Ctrl+,) → search for **“MCP”**, or **Cmd+Shift+P** → “MCP”. If your build has an MCP panel, it may show configured servers and their connection status.
+
+**Configured** = what’s in `~/.cursor/mcp.json`. **Connected** = servers Cursor successfully connected to at startup/reload (e.g. only those whose Docker containers were up when Cursor loaded). To get a server connected, start its container, then **Developer: Reload Window** in Cursor.
+
 ### 📋 Prerequisites
 
 - Docker Engine 20.10+

@@ -31,7 +31,8 @@ This MCP server provides **complete** API-based access to Cisco Catalyst Center 
 - **`get_network_health`**: Monitor overall network health metrics
 
 **Client Analytics & Monitoring:**
-- **`get_clients`**: List and monitor network clients
+- **`get_clients`**: List and monitor network clients (client-health API)
+- **`get_wired_wireless_clients`**: Get wired and wireless client counts and optionally per-client lists (MAC, IP, name). Uses client-health for counts; optionally Data API for per-client details when supported by your Catalyst Center version.
 - **`get_client_health`**: Monitor client connectivity and performance
 - **`get_client_detail`**: Get detailed client information and history
 
@@ -266,6 +267,16 @@ docker logs catc-mcp-server
 docker run -e LOG_LEVEL=DEBUG catc-mcp-server
 ```
 
+### Startup behavior and MCP client connectivity
+
+The server is designed so that **MCP clients (e.g. Cursor) can connect even when the container cannot reach Catalyst Center at startup** (e.g. different network, VPN not up yet):
+
+- **Server always starts listening.** The HTTP MCP server binds to `MCP_HOST:MCP_PORT` (e.g. `0.0.0.0:8002`) and serves the `/mcp` endpoint regardless of whether startup authentication to Catalyst Center succeeds. This allows Cursor and other MCP clients to connect and discover tools immediately.
+- **Startup auth is optional.** At startup the server attempts to authenticate with Catalyst Center (with a **15-second timeout** so startup does not hang). If that fails, a warning is logged and the server continues to start. Tool calls will attempt authentication when first used (and on 401 retries).
+- **Why this matters.** If the server required successful auth before listening, it would exit or hang when run in Docker without reachability to Catalyst Center. Clients would never see the server in their MCP list. With the current behavior, the server is always listed once the container is running; tools return clear errors if Catalyst Center is still unreachable when you use them.
+
+**For tools to work**, the host running the container (or the container network) must be able to reach `CATC_URL` when you invoke tools. Restart Cursor (or reload the window) after the container is up so it can connect to the server.
+
 ## Integration
 
 ### MCP Client Configuration
@@ -359,7 +370,10 @@ telnet catalyst-center.example.com 443
 docker exec catc-mcp-server ping catalyst-center.example.com
 ```
 
-**MCP Client Connection Issues:**
+**MCP Client Connection Issues / server not in Cursor MCP list:**
+- The server **starts listening even when startup auth to Catalyst Center fails** (see [Startup behavior and MCP client connectivity](#startup-behavior-and-mcp-client-connectivity)). If the container previously exited on auth failure, rebuild and restart so the updated behavior is in use; then the MCP server will listen on port 8002 and Cursor can connect.
+- Restart Cursor (or reload the window) after the container is running so it rediscovers MCP servers.
+
 ```bash
 # Verify MCP endpoint is accessible
 curl http://localhost:8002/mcp

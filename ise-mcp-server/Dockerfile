@@ -29,8 +29,9 @@ USER app
 # Expose the HTTP server port
 EXPOSE 8005
 
-# Set environment variables
+# Set environment variables (unbuffered so crashes show in docker logs)
 ENV PYTHONPATH=/app
+ENV PYTHONUNBUFFERED=1
 ENV MCP_HOST=0.0.0.0
 ENV MCP_PORT=8005
 

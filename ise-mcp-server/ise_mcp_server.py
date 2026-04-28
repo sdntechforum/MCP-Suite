@@ -499,7 +499,7 @@ def ise_search_endpoint_by_mac(mac_address: str) -> Dict[str, Any]:
     Returns:
         Dict containing endpoint information for the specified MAC address
     """
-    filter_expr = f"mac.EQUALS.{mac_address}"
+    filter_expr = f"mac.EQ.{mac_address}"
     return ise_api.get("endpoint", params={"filter": filter_expr})
 
 @mcp.tool()
@@ -528,7 +528,7 @@ def ise_get_device_compliance_status(mac_address: str) -> Dict[str, Any]:
         Dict containing compliance and profiling information for the device
     """
     # Get endpoint information
-    endpoint_filter = f"mac.EQUALS.{mac_address}"
+    endpoint_filter = f"mac.EQ.{mac_address}"
     endpoint_data = ise_api.get("endpoint", params={"filter": endpoint_filter})
     
     return {

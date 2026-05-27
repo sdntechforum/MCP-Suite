@@ -2,9 +2,19 @@
 .env
 .env.local
 .env.production
+.env.save
 
 # Docker override files - user-specific configuration
 docker-compose.override.yml
+
+# IOS-XE MCP live device inventory (contains real mgmt IPs / topology)
+# The committed reference template lives at:
+#   ios-xe-mcp-server/inventory.example.json
+ios-xe-mcp-server/inventory.json
+
+# Local-only config / notes that must never leave the contributor's laptop
+# (originals of sanitized files, scratch deployment notes, internal references)
+.local-config/
 
 # Python
 __pycache__/

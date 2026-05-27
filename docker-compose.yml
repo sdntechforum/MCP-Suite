@@ -139,7 +139,16 @@ services:
     environment:
       - MCP_HOST=0.0.0.0
       - MCP_PORT=8003
-      
+      # Path inside the container where inventory.json is mounted (see volumes below).
+      # Override IOS_XE_INVENTORY_FILE in .env to use a different path.
+      - IOS_XE_INVENTORY_FILE=${IOS_XE_INVENTORY_FILE:-/app/inventory.json}
+
+    # Optional read-only mount: host inventory.json -> /app/inventory.json
+    # The file must exist on the host (start from inventory.example.json).
+    # ":ro" enforces read-only inside the container.
+    volumes:
+      - ./ios-xe-mcp-server/inventory.json:/app/inventory.json:ro
+
     # Port mapping: host:container
     ports:
       - "8003:8003"

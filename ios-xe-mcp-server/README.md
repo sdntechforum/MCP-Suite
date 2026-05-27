@@ -19,6 +19,10 @@ This MCP server provides **secure** SSH-based management capabilities for Cisco 
 
 - **`show_command`**: Execute any show command on an IOS XE device (credentials from environment only)
 - **`config_command`**: Send configuration commands to an IOS XE device (credentials from environment only)
+- **`list_devices`**: List known IOS XE devices from the local inventory file (filterable by name / role / site / tag)
+- **`reload_inventory`**: Re-read the inventory file at runtime without restarting the container
+
+> The `host` argument of `show_command` / `config_command` accepts either an IP/hostname **or** the case-insensitive friendly `name` of a device defined in the inventory file (e.g. `"Site-A-Core1"`).
 
 ### Security Features
 
@@ -38,18 +42,15 @@ This MCP server provides **secure** SSH-based management capabilities for Cisco 
 ### Show Commands
 
 ```python
-# Secure: Only host and command required (credentials from .env)
-result = show_command("show version", "switch.company.com")
-result = show_command("show ip interface brief", "switch.company.com") 
-result = show_command("show ip route summary", "switch.company.com")
+# By raw IP / hostname
+result = show_command("show version", "192.0.2.10")
+result = show_command("show ip interface brief", "switch.company.com")
 
-# Check BGP status
-result = show_command("show ip bgp summary", "switch.company.com")
-result = show_command("show bgp l2vpn evpn summary", "switch.company.com")
-
-# Device information commands  
-result = show_command("show ip protocols", "switch.company.com")
-result = show_command("show running-config interface gi0/1", "switch.company.com")
+# By friendly name from inventory.json (case-insensitive)
+result = show_command("show ip bgp summary", "Site-A-Core1")          # → 192.0.2.10
+result = show_command("show standby brief",   "Site-A-Core2")          # → 192.0.2.11
+result = show_command("show ip vrf detail",   "Site-A-Fusion")         # → 192.0.2.5
+result = show_command("show running-config interface gi0/1", "Site-A-Edge1")
 ```
 
 ### Configuration Commands
@@ -352,6 +353,137 @@ Both tools automatically:
 - ✅ Sanitize error messages (`***REDACTED***`)
 - ✅ Validate environment setup on server startup
 - ✅ Save configuration changes automatically
+
+---
+
+## Device Inventory (devices NOT in Catalyst Center)
+
+Catalyst Center already publishes its managed inventory through the Catalyst-Center MCP. Many lab/production devices, however, live **outside** Catalyst Center — for example:
+
+* L3 super-cores (e.g. `Site-A-Core1`, `Site-A-Core2`)
+* Fusion / DC handoff routers (e.g. `Site-A-Fusion`)
+* Infra / lab routers (e.g. `Lab-Router-01`)
+* Legacy centralised WLCs (e.g. `Site-A-WLC-01`)
+* SD-WAN edges across sites and branches (e.g. `Site-A-Edge1`, `Branch-1-Edge1`)
+
+To make these discoverable to the MCP client, the IOS-XE MCP server can load a JSON inventory file at startup.
+
+### Schema (`inventory.json`)
+
+```json
+{
+  "version": 1,
+  "devices": [
+    {
+      "name":    "Site-A-Core1",
+      "host":    "192.0.2.10",
+      "role":    "core",
+      "site":    "Site-A",
+      "tags":    ["hsrp-active", "as-64500"],
+      "enabled": true,
+      "notes":   "L3 super core; HSRP-paired with Site-A-Core2."
+    }
+  ]
+}
+```
+
+| Field    | Required | Notes |
+|---       |---       |---    |
+| `name`   | yes      | Case-insensitive unique. Allowed chars: `[A-Za-z0-9._-]`, max 64. |
+| `host`   | yes      | IPv4/IPv6 literal **or** RFC 1123 hostname. Re-validated before connect. |
+| `role`   | no       | Free-form, e.g. `core`, `fusion`, `sdwan-edge`, `wlc`, `infra`, `sda-border`, `sda-distribution`. |
+| `site`   | no       | Free-form, e.g. `Site-A`, `Site-B`, `Branch-1`. |
+| `tags`   | no       | List of short string tags. |
+| `enabled`| no       | Default `true`. Set `false` to keep an entry visible but block connections. |
+| `notes`  | no       | Free-form annotation (max 256 chars). |
+
+> ⚠️ **Never put credentials in this file.** Credentials come from `IOS_XE_USERNAME` / `IOS_XE_PASSWORD` only. Records with credential-like fields are ignored / rejected by the loader.
+
+### Deployment
+
+1. Start from the committed reference template:
+   ```bash
+   cd network-mcp-docker-suite/ios-xe-mcp-server
+   cp inventory.example.json inventory.json
+   chmod 600 inventory.json
+   # edit inventory.json on the host to match your environment
+   ```
+2. The suite `docker-compose.yml` already mounts the file **read-only** into the container:
+   ```yaml
+   volumes:
+     - ./ios-xe-mcp-server/inventory.json:/app/inventory.json:ro
+   environment:
+     - IOS_XE_INVENTORY_FILE=${IOS_XE_INVENTORY_FILE:-/app/inventory.json}
+   ```
+3. Rebuild + restart the IOS-XE container:
+   ```bash
+   docker compose up -d --build ios-xe-mcp-server
+   ```
+4. From the MCP client, call `list_devices` to confirm the entries are loaded.
+5. After editing `inventory.json` on the host, call `reload_inventory` to refresh — no container restart required.
+
+### Tools
+
+#### `list_devices(name="", role="", site="", tag="")`
+
+Filters are optional, case-insensitive (`name` is a substring match; `role` / `site` / `tag` are equality matches).
+
+```python
+list_devices(role="core")            # all cores
+list_devices(site="Site-A")          # all devices in Site-A
+list_devices(tag="dc-anchor")        # all DC-anchor edges
+list_devices(name="edge")            # any device whose name contains "edge"
+```
+
+Returns:
+
+```json
+{
+  "inventory_loaded": true,
+  "inventory_path":   "/app/inventory.json",
+  "total":            20,
+  "matched":          4,
+  "filters":          {"name": "", "role": "core", "site": "", "tag": ""},
+  "devices":          [ ... ],
+  "error":            null
+}
+```
+
+#### `reload_inventory()`
+
+Re-reads the mounted `inventory.json` from disk. Returns `{ inventory_loaded, inventory_path, total, error }`.
+
+#### Friendly-name resolution
+
+`show_command` and `config_command` accept either an IP/hostname **or** a friendly inventory `name`:
+
+```python
+show_command("show ip bgp summary", "Site-A-Core1")           # resolves to 192.0.2.10
+show_command("show ip ospf neighbor", "192.0.2.5")            # raw IP also works
+config_command(["interface Lo99", "description test"], "Site-A-Core1")
+```
+
+If a name is not found in the inventory, the value is treated as an IP/hostname and validated against an RFC 1123 / `ipaddress.ip_address()` allow-list before being passed to Netmiko (defense against shell-metachar injection). If a matched device has `"enabled": false`, the call is rejected with a clear error.
+
+### Security model
+
+* The inventory file is **mounted read-only** inside the container (`:ro`).
+* Loader caps file size at **1 MiB** to bound DoS surface.
+* Each `host` value is re-validated as either a valid IP literal or an RFC 1123 hostname before being passed to Netmiko.
+* Inventory contents are **not** logged at INFO level — only counts and the file path. (Set `LOG_LEVEL=DEBUG` if you need detail during troubleshooting.)
+* The host-side `inventory.json` is added to `.gitignore`; only `inventory.example.json` is committed.
+
+### Why this design (vs. multiple MCP containers)
+
+We considered three options for managing many IOS XE devices:
+
+| Option | Description | Trade-off |
+|---|---|---|
+| A | One AAA-backed shared service account; one MCP container; inventory file enumerates devices | ✅ One credential to rotate · ✅ Single endpoint for the MCP client · ❌ Requires AAA / consistent local user |
+| B | Multiple MCP containers, one per device or device group, each with its own `.env` and port | ❌ N×port sprawl · ❌ N credential blobs to rotate · ❌ Cursor descriptor cache thrash |
+| C | Per-device credential map embedded in the inventory file | ❌ Credentials in a config file (violates `codeguard-1-hardcoded-credentials`) |
+
+**This patch implements Option A.** Cred sprawl stays out of the codebase and out of `.env`; the only thing the inventory file knows about is *what* the devices are, never *how* to log into them.
 
 ## License
 

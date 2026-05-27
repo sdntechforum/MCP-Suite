@@ -1,0 +1,87 @@
+{
+  "_about": "Optional inventory of IOS XE devices NOT registered in Catalyst Center. The IOS-XE MCP server reads this file (read-only) at startup and exposes it via the list_devices tool. Friendly `name` values can be passed as the `host` arg of show_command/config_command and will be resolved to the `host` IP/hostname here. NEVER put credentials in this file -- credentials come from IOS_XE_USERNAME/IOS_XE_PASSWORD only. All addresses below are RFC5737 documentation IPs (192.0.2.0/24); replace with your real management addresses.",
+  "version": 1,
+  "devices": [
+    {
+      "name": "Site-A-Core1",
+      "host": "192.0.2.10",
+      "role": "core",
+      "site": "Site-A",
+      "tags": ["hsrp-active", "as-64500"],
+      "enabled": true,
+      "notes": "Example: L3 super-core; HSRP-paired with Site-A-Core2. Demonstrates the `core` role and HSRP active/standby tags."
+    },
+    {
+      "name": "Site-A-Core2",
+      "host": "192.0.2.11",
+      "role": "core",
+      "site": "Site-A",
+      "tags": ["hsrp-standby", "as-64500"],
+      "enabled": true,
+      "notes": "Example: L3 super-core; HSRP standby of Site-A-Core1."
+    },
+    {
+      "name": "Site-A-Fusion",
+      "host": "192.0.2.5",
+      "role": "fusion",
+      "site": "Site-A",
+      "tags": ["vrf-leak-hub", "as-64502", "fabric-handoff"],
+      "enabled": true,
+      "notes": "Example: Fusion router doing per-VRF route exchange with cores; demonstrates the `fusion` role and a per-site BGP AS that differs from the core AS."
+    },
+    {
+      "name": "Site-A-Edge1",
+      "host": "192.0.2.20",
+      "role": "sdwan-edge",
+      "site": "Site-A",
+      "tags": ["dc-anchor", "vpn-100", "vpn-130"],
+      "enabled": true,
+      "notes": "Example: SD-WAN edge serving as a DC anchor for a service VPN. Multiple VPN tags show how to mark which transports a device carries."
+    },
+    {
+      "name": "Site-A-Edge2",
+      "host": "192.0.2.21",
+      "role": "sdwan-edge",
+      "site": "Site-A",
+      "tags": ["dc-anchor", "vpn-100"],
+      "enabled": true,
+      "notes": "Example: paired SD-WAN edge. Note this one does NOT carry VPN 130 -- this is exactly the kind of asymmetry the inventory is useful for surfacing."
+    },
+    {
+      "name": "Branch-1-Edge1",
+      "host": "192.0.2.60",
+      "role": "sdwan-edge",
+      "site": "Branch-1",
+      "tags": ["branch", "lte-backup"],
+      "enabled": true,
+      "notes": "Example: branch SD-WAN edge with an LTE backup transport."
+    },
+    {
+      "name": "Site-Fabric-CP-BR-01",
+      "host": "192.0.2.100",
+      "role": "sda-border",
+      "site": "Site-Fabric",
+      "tags": ["catalyst-center-managed", "control-plane", "border", "ha"],
+      "enabled": true,
+      "notes": "Example: SDA Control-Plane + Border (HA pair with -02). Devices like this are usually ALSO visible via Catalyst Center MCP -- inventory entries here are useful when you want a friendly name across both surfaces."
+    },
+    {
+      "name": "Site-Fabric-WLC-01",
+      "host": "192.0.2.115",
+      "role": "wlc",
+      "site": "Site-Fabric",
+      "tags": ["catalyst-center-managed", "fabric-mode", "ha"],
+      "enabled": true,
+      "notes": "Example: fabric-mode WLC. Demonstrates a non-router device type that still benefits from being listed here for friendly addressing."
+    },
+    {
+      "name": "Lab-Router-01",
+      "host": "192.0.2.1",
+      "role": "infra",
+      "site": "Lab",
+      "tags": ["placeholder-ip"],
+      "enabled": false,
+      "notes": "Example of a disabled entry: the device exists in the topology but the inventory record needs more work (placeholder management IP, role under review, etc.). list_devices(...) will skip enabled=false entries by default; pass enabled=null to include them."
+    }
+  ]
+}

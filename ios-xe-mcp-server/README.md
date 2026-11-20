@@ -19,10 +19,37 @@ This MCP server provides **secure** SSH-based management capabilities for Cisco 
 
 - **`show_command`**: Execute any show command on an IOS XE device (credentials from environment only)
 - **`config_command`**: Send configuration commands to an IOS XE device (credentials from environment only)
-- **`list_devices`**: List known IOS XE devices from the local inventory file (filterable by name / role / site / tag)
+- **`list_devices`**: List known IOS XE devices from the local inventory file (filterable by name / role / site / tag / access_profile), including each device's transport and whether its access profile is ready
 - **`reload_inventory`**: Re-read the inventory file at runtime without restarting the container
 
 > The `host` argument of `show_command` / `config_command` accepts either an IP/hostname **or** the case-insensitive friendly `name` of a device defined in the inventory file (e.g. `"Site-A-Core1"`).
+
+### Access profiles (per-group transport and credentials)
+
+Devices that can't use the shared service account, or that only answer on Telnet, can be assigned an **access profile** in `inventory.json`. A profile picks the transport, port and *credential set name*; the secrets for that set live only in the environment.
+
+```json
+"access_profiles": {
+  "dc-local":      {"transport": "ssh",    "port": 22, "credential": "DC"},
+  "legacy-telnet": {"transport": "telnet", "port": 23, "credential": "LEGACY"}
+},
+"devices": [
+  {"name": "Site-A-Fusion", "host": "192.0.2.5", "access_profile": "dc-local"}
+]
+```
+
+```bash
+# .env — one set per credential name
+IOS_XE_CRED_DC_USERNAME=dc-svc
+IOS_XE_CRED_DC_PASSWORD=change-me
+IOS_XE_CRED_DC_ENABLE_SECRET=            # optional; enters enable mode first
+IOS_XE_ALLOW_TELNET=true                 # required before any Telnet profile is used
+```
+
+- Devices without `access_profile`, and hosts not in the inventory, use the built-in `default` profile: SSH/22 with `IOS_XE_USERNAME` / `IOS_XE_PASSWORD`. Existing inventories keep working unchanged.
+- **Telnet is clear-text.** It is refused unless `IOS_XE_ALLOW_TELNET=true`, and Telnet devices accept `show` commands only (no `| redirect` / `tee` / `append`); `config_command` is refused. Treat Telnet profiles as a migration list toward SSH + AAA.
+- Profiles that contain `username` / `password` / other unsupported keys are rejected, and devices pointing at an unknown or incomplete profile fail closed with an error naming the missing variables (never their values).
+- Profile definitions reload with `reload_inventory`; new or changed credential variables need the container recreated (`docker compose up -d --force-recreate ios-xe-mcp-server`).
 
 ### Security Features
 
@@ -117,6 +144,10 @@ nano .env
 |----------|-------------|---------|-------|
 | `SSH_TIMEOUT` | SSH connection timeout | `60` | Seconds |
 | `DEFAULT_DEVICE_TYPE` | Netmiko device type | `cisco_ios` | Usually `cisco_ios` for IOS XE |
+| `IOS_XE_ENABLE_SECRET` | Enable secret for the default credential set | | Optional |
+| `IOS_XE_CRED_<NAME>_USERNAME` / `_PASSWORD` | Credential set referenced by an access profile's `credential` | `IOS_XE_CRED_DC_USERNAME` | Required only for profiles that use `<NAME>` |
+| `IOS_XE_CRED_<NAME>_ENABLE_SECRET` | Enable secret for that set | | Optional |
+| `IOS_XE_ALLOW_TELNET` | Allow Telnet access profiles | `false` | Telnet is show-only |
 
 ### Example .env File
 

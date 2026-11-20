@@ -1,6 +1,20 @@
 {
-  "_about": "Optional inventory of IOS XE devices NOT registered in Catalyst Center. The IOS-XE MCP server reads this file (read-only) at startup and exposes it via the list_devices tool. Friendly `name` values can be passed as the `host` arg of show_command/config_command and will be resolved to the `host` IP/hostname here. NEVER put credentials in this file -- credentials come from IOS_XE_USERNAME/IOS_XE_PASSWORD only. All addresses below are RFC5737 documentation IPs (192.0.2.0/24); replace with your real management addresses.",
+  "_about": "Optional inventory of IOS XE devices NOT registered in Catalyst Center. The IOS-XE MCP server reads this file (read-only) at startup and exposes it via the list_devices tool. Friendly `name` values can be passed as the `host` arg of show_command/config_command and will be resolved to the `host` IP/hostname here. NEVER put credentials in this file -- credentials come from IOS_XE_USERNAME/IOS_XE_PASSWORD (default profile) or IOS_XE_CRED_<NAME>_* (access profiles) in the environment only. All addresses below are RFC5737 documentation IPs (192.0.2.0/24); replace with your real management addresses.",
   "version": 1,
+  "access_profiles": {
+    "dc-local": {
+      "transport": "ssh",
+      "port": 22,
+      "credential": "DC",
+      "description": "Example: DC devices with their own local account. Secrets come from IOS_XE_CRED_DC_USERNAME / IOS_XE_CRED_DC_PASSWORD."
+    },
+    "legacy-telnet": {
+      "transport": "telnet",
+      "port": 23,
+      "credential": "LEGACY",
+      "description": "Example: Telnet-only legacy devices (show commands only; needs IOS_XE_ALLOW_TELNET=true). Secrets come from IOS_XE_CRED_LEGACY_*."
+    }
+  },
   "devices": [
     {
       "name": "Site-A-Core1",
@@ -27,7 +41,8 @@
       "site": "Site-A",
       "tags": ["vrf-leak-hub", "as-64502", "fabric-handoff"],
       "enabled": true,
-      "notes": "Example: Fusion router doing per-VRF route exchange with cores; demonstrates the `fusion` role and a per-site BGP AS that differs from the core AS."
+      "access_profile": "dc-local",
+      "notes": "Example: Fusion router doing per-VRF route exchange with cores; demonstrates the `fusion` role, a per-site BGP AS that differs from the core AS, and an access profile with its own credential set."
     },
     {
       "name": "Site-A-Edge1",
@@ -81,6 +96,7 @@
       "site": "Lab",
       "tags": ["placeholder-ip"],
       "enabled": false,
+      "access_profile": "legacy-telnet",
       "notes": "Example of a disabled entry: the device exists in the topology but the inventory record needs more work (placeholder management IP, role under review, etc.). list_devices(...) will skip enabled=false entries by default; pass enabled=null to include them."
     }
   ]
